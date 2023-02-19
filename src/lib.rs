@@ -1,4 +1,3 @@
-use reqwest::Error as ReqError;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt;
@@ -14,7 +13,7 @@ pub struct Mailgun {
     pub zone: Option<String>,
 }
 
-pub type SendResult<T> = Result<T, ReqError>;
+pub type SendResult<T> = Result<T, anyhow::Error>;
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
 pub struct SendResponse {
@@ -33,24 +32,7 @@ impl Mailgun {
     pub fn set_zone(&mut self, zone: &str) {
         self.zone = Some(zone.to_string());
     }
-    pub fn send(self, sender: &EmailAddress, msg: Message) -> SendResult<SendResponse> {
-        let client = reqwest::blocking::Client::new();
-        let mut params = msg.params();
-        params.insert("from".to_string(), sender.to_string());
-        let root = self.zone.unwrap_or(MAILGUN_API.to_string());
-        let url = format!("{}/{}/{}", &root, self.domain, MESSAGES_ENDPOINT);
-
-        let res = client
-            .post(url)
-            .basic_auth("api", Some(self.api_key))
-            .form(&params)
-            .send()?
-            .error_for_status()?;
-
-        let parsed: SendResponse = res.json()?;
-        Ok(parsed)
-    }
-    pub async fn send_async(self, sender: &EmailAddress, msg: Message) -> SendResult<SendResponse> {
+    pub async fn send(self, sender: &EmailAddress, msg: Message) -> SendResult<SendResponse> {
         let client = reqwest::Client::new();
         let mut params = msg.params();
         params.insert("from".to_string(), sender.to_string());
@@ -62,15 +44,18 @@ impl Mailgun {
             .basic_auth("api", Some(self.api_key))
             .form(&params)
             .send()
-            .await?
-            .error_for_status()?;
-
-        let parsed: SendResponse = res.json().await?;
-        Ok(parsed)
+            .await?;
+        if res.status().is_success() {
+            let parsed: SendResponse = res.json().await?;
+            Ok(parsed)
+        } else {
+            let parsed = res.text().await?;
+            Err(anyhow::anyhow!("{:?}", parsed))
+        }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Message {
     pub to: Vec<EmailAddress>,
     pub cc: Vec<EmailAddress>,
@@ -132,6 +117,7 @@ impl Message {
     }
 }
 
+#[derive(Debug)]
 pub struct EmailAddress {
     name: Option<String>,
     address: String,
