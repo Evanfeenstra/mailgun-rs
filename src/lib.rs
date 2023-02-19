@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use std::fmt;
 
 const MAILGUN_API: &str = "https://api.mailgun.net/v3";
+// eu: https://api.eu.mailgun.net/v3
 const MESSAGES_ENDPOINT: &str = "messages";
 
 #[derive(Default)]
 pub struct Mailgun {
-    pub api_key: String,
     pub domain: String,
-    pub message: Message,
+    pub api_key: String,
+    pub zone: Option<String>,
 }
 
 pub type SendResult<T> = Result<T, ReqError>;
@@ -22,11 +23,22 @@ pub struct SendResponse {
 }
 
 impl Mailgun {
-    pub fn send(self, sender: &EmailAddress) -> SendResult<SendResponse> {
+    pub fn new(domain: &str, api_key: &str) -> Self {
+        Self {
+            domain: domain.to_string(),
+            api_key: api_key.to_string(),
+            zone: None,
+        }
+    }
+    pub fn set_zone(&mut self, zone: &str) {
+        self.zone = Some(zone.to_string());
+    }
+    pub fn send(self, sender: &EmailAddress, msg: Message) -> SendResult<SendResponse> {
         let client = reqwest::blocking::Client::new();
-        let mut params = self.message.params();
+        let mut params = msg.params();
         params.insert("from".to_string(), sender.to_string());
-        let url = format!("{}/{}/{}", MAILGUN_API, self.domain, MESSAGES_ENDPOINT);
+        let root = self.zone.unwrap_or(MAILGUN_API.to_string());
+        let url = format!("{}/{}/{}", &root, self.domain, MESSAGES_ENDPOINT);
 
         let res = client
             .post(url)
@@ -38,11 +50,12 @@ impl Mailgun {
         let parsed: SendResponse = res.json()?;
         Ok(parsed)
     }
-    pub async fn send_async(self, sender: &EmailAddress) -> SendResult<SendResponse> {
+    pub async fn send_async(self, sender: &EmailAddress, msg: Message) -> SendResult<SendResponse> {
         let client = reqwest::Client::new();
-        let mut params = self.message.params();
+        let mut params = msg.params();
         params.insert("from".to_string(), sender.to_string());
-        let url = format!("{}/{}/{}", MAILGUN_API, self.domain, MESSAGES_ENDPOINT);
+        let root = self.zone.unwrap_or(MAILGUN_API.to_string());
+        let url = format!("{}/{}/{}", &root, self.domain, MESSAGES_ENDPOINT);
 
         let res = client
             .post(url)
