@@ -38,6 +38,23 @@ impl Mailgun {
         let parsed: SendResponse = res.json()?;
         Ok(parsed)
     }
+    pub async fn send_async(self, sender: &EmailAddress) -> SendResult<SendResponse> {
+        let client = reqwest::Client::new();
+        let mut params = self.message.params();
+        params.insert("from".to_string(), sender.to_string());
+        let url = format!("{}/{}/{}", MAILGUN_API, self.domain, MESSAGES_ENDPOINT);
+
+        let res = client
+            .post(url)
+            .basic_auth("api", Some(self.api_key))
+            .form(&params)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let parsed: SendResponse = res.json().await?;
+        Ok(parsed)
+    }
 }
 
 #[derive(Default)]
@@ -50,6 +67,7 @@ pub struct Message {
     pub html: String,
     pub template: String,
     pub template_vars: HashMap<String, String>,
+    pub recipient_vars: HashMap<String, HashMap<String, String>>,
 }
 
 impl Message {
@@ -68,10 +86,18 @@ impl Message {
         // add template
         if !self.template.is_empty() {
             params.insert(String::from("template"), self.template);
-            params.insert(
-                String::from("h:X-Mailgun-Variables"),
-                serde_json::to_string(&self.template_vars).unwrap(),
-            );
+            if !self.template_vars.is_empty() {
+                params.insert(
+                    String::from("h:X-Mailgun-Variables"),
+                    serde_json::to_string(&self.template_vars).unwrap(),
+                );
+            }
+            if !self.recipient_vars.is_empty() {
+                params.insert(
+                    String::from("h:X-Mailgun-Recipient-Variables"),
+                    serde_json::to_string(&self.recipient_vars).unwrap(),
+                );
+            }
         }
 
         params
