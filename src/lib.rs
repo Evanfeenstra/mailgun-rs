@@ -16,7 +16,7 @@ pub struct Mailgun {
 
 pub type SendResult<T> = Result<T, ReqError>;
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 pub struct SendResponse {
     pub message: String,
     pub id: String,
